@@ -1,5 +1,3 @@
-#include <Adafruit_NeoPixel.h>
-
 /*
 Ricochet Robots made awesome
 
@@ -25,40 +23,46 @@ starts again.
 At any time, a long press on the button (longer than HOLD_TIME seconds) will
 reset the loop, and select a new led. This is to avoid having to wait for the
 whole timer when the route is obvious.
-
-TODO
-1- become rich with this code
 */
+#include <Adafruit_NeoPixel.h>
 
-/* user defined vairables */
+/* hardware variables */
+#define LED_NUMBER           5
+#define LED_PIN              0
+#define STRIP_PIN            1
+#define BTN_PIN              2
+/* ****************************************** */
+
+/* tweaks */
+// one in RANDOMNESS_LEVEL chance of getting the vortex
 #define RANDOMNESS_LEVEL     16
+
+// timer length in ms
 #define TIMER_LENGTH         10000
-// warn before the end of the timer (in ms)
+
+// TIMER_WARN ms before the end of the timer, the strip will blink
 #define TIMER_WARN           5000
 
 // how long you need to hold to reset the loop
 #define HOLD_TIME            1000
 
-// ~3/4
+
 #define STRIP_MIN_BRIGHTNESS 50
-#define PULSE_DELAY          2
 
-// how fast to run the space thingie
-#define SPACE_DELAY          100
+// how fast to run the animation thingie
+#define ANIMATION_DELAY      100
 
-// number of steps to take during space
-#define SPACE_STEPS_NUMBER   10
+// how many leds to light up during the picking animation
+#define ANIM_STEPS_NUMBER    20
 
 // how long each blink is
 #define BLINK_LENGTH         100
 /* ****************************************** */
 
-/* hardware variables, don't touch unless you know what you're doing */
-#define LED_NUMBER       5
-#define BTN_PIN          0
-#define STRIP_PIN        1
-#define LED_PIN          2
-#define DEBOUNCE_DELAY   20
+/* Stuff you probably don't want to mess with */
+#define STRIP_MAX_BRIGHTNESS 255
+#define PULSE_DELAY          2
+#define DEBOUNCE_DELAY       20
 /* ****************************************** */
 
 Adafruit_NeoPixel strip = Adafruit_NeoPixel(LED_NUMBER, STRIP_PIN, NEO_GRB + NEO_KHZ800);
@@ -104,11 +108,11 @@ bool vortexLed = false;
 byte isGettingBrighter  = 1; // +1 or -1, to increase/decrease brightness
 unsigned long pulseTime = 0;
 
-//space vars
-unsigned long spaceTime = 0;
-byte spaceIndex         = 0;   // space thing step number
-byte formerSpaceChip;
-byte thisSpaceChip;
+//animation vars
+unsigned long animStartTime = 0;
+byte animateLedPickIndex    = 0;
+byte formerAnimationChip;
+byte thisAnimationChip;
 
 // blinkage thingies
 // this is a terrible pain. I really hope I never have to look again at that
@@ -193,7 +197,8 @@ void loop ()
       initialise();
       break;
     case STATE_PICKING_LED: //pick and light led
-      if (!spaceThing())
+      digitalWrite(LED_PIN, LOW);
+      if (!animateLedPick())
       {
         pickLED();
         pickColour();
@@ -206,6 +211,7 @@ void loop ()
       }
       break;
     case STATE_LOOKING: //players are looking for a route
+      digitalWrite(LED_PIN, HIGH);
       runVortexIfNeeded();
       pulse();
       break;
@@ -229,10 +235,10 @@ void loop ()
 void initialise()
 {
   strip.setPixelColor(thisChip, 0);
-  digitalWrite(LED_PIN, LOW);
+  digitalWrite(LED_PIN, HIGH);
   resetBrightness();
   blinkStep = 0;
-  spaceIndex = 0;
+  animateLedPickIndex = 0;
   strip.show();
 }
 
@@ -314,9 +320,14 @@ void pulse()
   {
     pulseTime = currentPulseTime;
     byte stripBrightness = strip.getBrightness();
-    if (stripBrightness >= 255 || stripBrightness <= STRIP_MIN_BRIGHTNESS)
+    if (stripBrightness >= STRIP_MAX_BRIGHTNESS || stripBrightness <= STRIP_MIN_BRIGHTNESS)
     {
       isGettingBrighter = -isGettingBrighter;
+    }
+
+    if (state == STATE_RUNNING_TIMER)
+    {
+      analogWrite(LED_PIN, stripBrightness + isGettingBrighter);
     }
 
     strip.setBrightness(stripBrightness + isGettingBrighter);
@@ -403,6 +414,7 @@ void switchStripOff()
     }
   }
   strip.show();
+  analogWrite(LED_PIN, 0);
 }
 
 void switchStripOn()
@@ -423,35 +435,36 @@ void switchStripOn()
     }
   }
   strip.show();
+  analogWrite(LED_PIN, 255);
 }
 
-bool spaceThing()   // SPAAAAAAACE
+bool animateLedPick()
 {
-  if (spaceIndex < SPACE_STEPS_NUMBER)
+  if (animateLedPickIndex < ANIM_STEPS_NUMBER)
   {
-    unsigned long currentSpaceTime = millis();
-    if (currentSpaceTime - spaceTime > SPACE_DELAY)
+    unsigned long currentTime = millis();
+    if (currentTime - animStartTime > ANIMATION_DELAY)
     {
-      spaceTime = currentSpaceTime;
+      animStartTime = currentTime;
       do
       {
-        thisSpaceChip = random (0, LED_NUMBER);
-      } while (formerSpaceChip == thisSpaceChip);
+        thisAnimationChip = random (0, LED_NUMBER);
+      } while (formerAnimationChip == thisAnimationChip);
 
-      strip.setPixelColor(thisSpaceChip, colours[random (0, 4)]);
-      strip.setPixelColor(formerSpaceChip, 0);
+      strip.setPixelColor(thisAnimationChip, colours[random (0, 4)]);
+      strip.setPixelColor(formerAnimationChip, 0);
       strip.show();
-      spaceIndex++;
-      formerSpaceChip = thisSpaceChip;
+      animateLedPickIndex++;
+      formerAnimationChip = thisAnimationChip;
     }
     return true;
   }
   else
   {
-    strip.setPixelColor(formerSpaceChip, 0);
-    strip.setPixelColor(thisSpaceChip, 0);
+    strip.setPixelColor(formerAnimationChip, 0);
+    strip.setPixelColor(thisAnimationChip, 0);
     strip.show();
-    spaceIndex = 0;
+    animateLedPickIndex = 0;
     return false;
   }
 }
